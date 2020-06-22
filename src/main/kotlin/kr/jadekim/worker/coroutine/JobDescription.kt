@@ -1,18 +1,10 @@
 package kr.jadekim.worker.coroutine
 
-data class JobDescription(
-        val name: String,
-        val step: List<JobStep>
-)
+interface JobDescription<T : Job> {
 
-@Suppress("FunctionName")
-fun Job(name: String, body: (JobParameter) -> Unit) = JobDescription(name, listOf(SingleJobStep(body)))
+    val name: String
 
-private class SingleJobStep(private val body: (JobParameter) -> Unit) : JobStep {
+    fun serialize(job: T): JobData
 
-    override suspend fun run(parameter: JobParameter, previousResult: JobParameter): JobParameter {
-        body(parameter)
-
-        return JobParameter()
-    }
+    fun deserialize(data: JobData): T
 }

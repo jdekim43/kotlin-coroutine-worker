@@ -1,12 +1,12 @@
 package kr.jadekim.worker.coroutine.queue
 
-import kr.jadekim.worker.coroutine.Job
+import kr.jadekim.worker.coroutine.JobData
 
 interface JobQueue {
 
-    suspend fun push(job: Job)
+    suspend fun push(jobData: JobData)
 
-    suspend fun pop(): Job
+    suspend fun pop(): JobData
 
-    suspend fun poll(): Job?
+    suspend fun poll(): JobData?
 }

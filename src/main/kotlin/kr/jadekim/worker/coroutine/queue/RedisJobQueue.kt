@@ -7,7 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kr.jadekim.redis.lettuce.StringRedis
 import kr.jadekim.redis.lettuce.util.RedisQueue
-import kr.jadekim.worker.coroutine.Job
+import kr.jadekim.worker.coroutine.JobData
 
 class RedisJobQueue(
         private val redis: StringRedis,
@@ -17,7 +17,7 @@ class RedisJobQueue(
 
     private val eventBusKey = "$key:EVENT"
 
-    private val delegator = RedisQueue(redis, key, Job::class.java)
+    private val delegator = RedisQueue(redis, key, JobData::class.java)
 
     private var eventBus: ReceiveChannel<Pair<String, String>>? = null
 
@@ -33,16 +33,16 @@ class RedisJobQueue(
         }.asCoroutineChannel()
     }
 
-    override suspend fun push(job: Job) {
-        delegator.push(job)
+    override suspend fun push(jobData: JobData) {
+        delegator.push(jobData)
         redis.execute { publish(eventBusKey, "PUSH") }
     }
 
-    override suspend fun pop(): Job {
-        var job: Job? = delegator.pop()
+    override suspend fun pop(): JobData {
+        var jobData: JobData? = delegator.pop()
 
-        while (job == null) {
-            job = delegator.pop()
+        while (jobData == null) {
+            jobData = delegator.pop()
 
             if (eventBus == null) {
                 delay(1000)
@@ -51,8 +51,8 @@ class RedisJobQueue(
             }
         }
 
-        return job
+        return jobData
     }
 
-    override suspend fun poll(): Job? = delegator.pop()
+    override suspend fun poll(): JobData? = delegator.pop()
 }

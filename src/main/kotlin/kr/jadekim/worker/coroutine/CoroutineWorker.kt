@@ -20,12 +20,12 @@ class CoroutineWorker(
 
     private val logger = JLog.get(javaClass)
 
-    private val distributor = Channel<Job>(pendingSize)
+    private val distributor = Channel<JobData>(pendingSize)
 
     private var queuePopper: CoroutineJob? = null
     private val processors = mutableListOf<CoroutineJob>()
 
-    private val jobDescriptions = mutableMapOf<String, JobDescription>()
+    private val jobDescriptions = mutableMapOf<String, JobDescription<Job>>()
 
     fun start() {
         if (jobDescriptions.isEmpty()) {
@@ -43,7 +43,7 @@ class CoroutineWorker(
         processors.joinAll()
     }
 
-    fun registerJob(jobDescription: JobDescription) {
+    fun registerJob(jobDescription: JobDescription<Job>) {
         if (jobDescription.name in jobDescriptions.keys) {
             throw IllegalArgumentException("Already registered job name")
         }
@@ -51,34 +51,34 @@ class CoroutineWorker(
         jobDescriptions[jobDescription.name] = jobDescription
     }
 
-    operator fun plus(jobDescription: JobDescription) = registerJob(jobDescription)
+    operator fun plus(jobDescription: JobDescription<Job>) = registerJob(jobDescription)
 
-    suspend fun run(name: String, parameter: JobParameter) {
-        queue.push(Job(name, parameter))
+    suspend fun run(job: Job) {
+        val description = jobDescriptions[job.description.name] ?: throw IllegalStateException("Not registered job")
+
+        queue.push(description.serialize(job))
     }
 
     private fun launchProcessor(id: String? = null) {
         processors += launch(CoroutineName("CoroutineWorker-$name-Processor($id)")) {
-            for (job in distributor) {
-                val description = jobDescriptions[job.name]
+            for (jobData in distributor) {
+                val description = jobDescriptions[jobData.name]
 
                 if (description == null) {
-                    logger.error("Not registered job", extra = mapOf("job" to job))
+                    logger.error("Not registered job", extra = mapOf("job" to jobData))
 
                     continue
                 }
 
                 //TODO: Fail over
-                description.step.fold(job.parameter) { acc, nextStep ->
-                    nextStep.run(job.parameter, acc)
-                }
+                description.deserialize(jobData).run()
             }
         }
     }
 
     private fun launchQueuePopper() {
         queuePopper = launch(CoroutineName("CoroutineWorker-$name-QueuePopper")) {
-            while(isActive) {
+            while (isActive) {
                 distributor.send(queue.pop()) //TODO: POP 된 아이템이 send 되기 전에 취소됐을 경우
             }
         }

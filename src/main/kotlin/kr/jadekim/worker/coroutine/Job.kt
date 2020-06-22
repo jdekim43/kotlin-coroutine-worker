@@ -1,6 +1,8 @@
 package kr.jadekim.worker.coroutine
 
-data class Job(
-        val name: String,
-        val parameter: JobParameter
-)
+interface Job {
+
+    val description: JobDescription<out Job>
+
+    suspend fun run()
+}
