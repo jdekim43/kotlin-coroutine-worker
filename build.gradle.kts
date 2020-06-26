@@ -9,7 +9,7 @@ plugins {
 
 val artifactName = "kotlin-coroutine-worker"
 val artifactGroup = "kr.jadekim"
-val artifactVersion = "0.1.0"
+val artifactVersion = "0.1.7"
 group = artifactGroup
 version = artifactVersion
 
@@ -22,9 +22,11 @@ dependencies {
     val kotlinxCoroutineVersion: String by project
     val jLoggerVersion: String by project
     val lettuceExtensionVersion: String by project
+    val jacksonVersion: String by project
 
     implementation(kotlin("stdlib-jdk8"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutineVersion")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:$jacksonVersion")
 
     implementation("kr.jadekim:j-logger:$jLoggerVersion")
 

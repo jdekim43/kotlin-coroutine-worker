@@ -1,5 +1,7 @@
 package kr.jadekim.worker.coroutine
 
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kr.jadekim.logger.JLog
@@ -25,7 +27,7 @@ class CoroutineWorker(
     private var queuePopper: CoroutineJob? = null
     private val processors = mutableListOf<CoroutineJob>()
 
-    private val jobDescriptions = mutableMapOf<String, JobDescription<Job>>()
+    private val jobDescriptions = mutableMapOf<String, JobDescription<Job, Any>>()
 
     fun start() {
         if (jobDescriptions.isEmpty()) {
@@ -43,20 +45,25 @@ class CoroutineWorker(
         processors.joinAll()
     }
 
-    fun registerJob(jobDescription: JobDescription<Job>) {
+    @Suppress("UNCHECKED_CAST")
+    fun <J : Job, Data : Any> registerJob(jobDescription: JobDescription<J, Data>) {
         if (jobDescription.name in jobDescriptions.keys) {
             throw IllegalArgumentException("Already registered job name")
         }
 
-        jobDescriptions[jobDescription.name] = jobDescription
+        jobDescriptions[jobDescription.name] = jobDescription as JobDescription<Job, Any>
     }
 
-    operator fun plus(jobDescription: JobDescription<Job>) = registerJob(jobDescription)
+    operator fun <J : Job> plus(jobDescription: JobDescription<J, Any>) = registerJob(jobDescription)
 
-    suspend fun run(job: Job) {
+    private val mapper = jacksonObjectMapper()
+
+    fun run(job: Job): CoroutineJob {
         val description = jobDescriptions[job.description.name] ?: throw IllegalStateException("Not registered job")
+        val data = mapper.valueToTree<ObjectNode>(description.serialize(job))
+        val jobData = JobData(description.name, data)
 
-        queue.push(description.serialize(job))
+        return launch { queue.push(jobData) }
     }
 
     private fun launchProcessor(id: String? = null) {
@@ -70,8 +77,10 @@ class CoroutineWorker(
                     continue
                 }
 
+                val data = mapper.treeToValue(jobData.data, description.dataClass.java)
+
                 //TODO: Fail over
-                description.deserialize(jobData).run()
+                description.deserialize(data).run()
             }
         }
     }
@@ -79,7 +88,14 @@ class CoroutineWorker(
     private fun launchQueuePopper() {
         queuePopper = launch(CoroutineName("CoroutineWorker-$name-QueuePopper")) {
             while (isActive) {
-                distributor.send(queue.pop()) //TODO: POP 된 아이템이 send 되기 전에 취소됐을 경우
+                val job = queue.pop()
+
+                if (job == null) {
+                    delay(1000)
+                    continue
+                }
+
+                distributor.send(job) //TODO: POP 된 아이템이 send 되기 전에 취소됐을 경우
             }
         }
     }
