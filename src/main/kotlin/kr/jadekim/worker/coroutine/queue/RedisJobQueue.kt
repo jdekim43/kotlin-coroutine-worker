@@ -59,7 +59,7 @@ class RedisJobQueue(
 
             try {
                 eventBus!!.receive()
-            } catch(e: ClosedReceiveChannelException) {
+            } catch (e: ClosedReceiveChannelException) {
                 return null
             }
         }

@@ -1,7 +1,5 @@
 package kr.jadekim.worker.coroutine
 
-import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kr.jadekim.logger.JLog
@@ -24,14 +22,16 @@ class CoroutineWorker(
 
     private val distributor = Channel<JobData>(pendingSize)
 
-    private var queuePopper: CoroutineJob? = null
     private val processors = mutableListOf<CoroutineJob>()
 
-    private val jobDescriptions = mutableMapOf<String, JobDescription<Job, Any>>()
+    private var queuePopper: CoroutineJob? = null
+    private var isActiveQueuePopper: Boolean = false
+
+    private val jobs = mutableMapOf<String, Job<*, *>>()
 
     fun start() {
-        if (jobDescriptions.isEmpty()) {
-            logger.warning("Not registered any job description")
+        if (jobs.isEmpty()) {
+            logger.warning("Not registered any job")
         }
 
         launchQueuePopper()
@@ -41,53 +41,61 @@ class CoroutineWorker(
     }
 
     suspend fun stop() {
+        isActiveQueuePopper = false
+        queuePopper?.join()
         distributor.close()
         processors.joinAll()
     }
 
-    @Suppress("UNCHECKED_CAST")
-    fun <J : Job, Data : Any> registerJob(jobDescription: JobDescription<J, Data>) {
-        if (jobDescription.name in jobDescriptions.keys) {
+    fun registerJob(job: Job<*, *>) {
+        if (job.description.key in jobs.keys) {
             throw IllegalArgumentException("Already registered job name")
         }
 
-        jobDescriptions[jobDescription.name] = jobDescription as JobDescription<Job, Any>
+        jobs[job.description.key] = job
     }
 
-    operator fun <J : Job> plus(jobDescription: JobDescription<J, Any>) = registerJob(jobDescription)
+    operator fun plus(job: Job<Any, Any>) = registerJob(job)
 
-    private val mapper = jacksonObjectMapper()
-
-    fun run(job: Job): CoroutineJob {
-        val description = jobDescriptions[job.description.name] ?: throw IllegalStateException("Not registered job")
-        val data = mapper.valueToTree<ObjectNode>(description.serialize(job))
-        val jobData = JobData(description.name, data)
+    fun <Data : Any> run(jobKey: String, data: Data): CoroutineJob {
+        val job = jobs[jobKey] ?: throw IllegalStateException("Not registered job")
+        val jobData = job.toJobData(data)
 
         return launch { queue.push(jobData) }
     }
 
+    operator fun plus(job: Pair<String, Any>) = run(job.first, job.second)
+
     private fun launchProcessor(id: String? = null) {
         processors += launch(CoroutineName("CoroutineWorker-$name-Processor($id)")) {
             for (jobData in distributor) {
-                val description = jobDescriptions[jobData.name]
+                val job = jobs[jobData.key]
 
-                if (description == null) {
+                if (job == null) {
                     logger.error("Not registered job", extra = mapOf("job" to jobData))
 
                     continue
                 }
 
-                val data = mapper.treeToValue(jobData.data, description.dataClass.java)
-
-                //TODO: Fail over
-                description.deserialize(data).run()
+                try {
+                    job.executeJob(jobData)
+                } catch (e: Exception) {
+                    logger.error("Fail to execute job", e, extra = mapOf("job" to jobData))
+                    if (job.isRetry(e)) {
+                        jobData.retryCount += 1
+                        queue.push(jobData)
+                    }
+                }
             }
         }
     }
 
     private fun launchQueuePopper() {
+        isActiveQueuePopper = true
         queuePopper = launch(CoroutineName("CoroutineWorker-$name-QueuePopper")) {
-            while (isActive) {
+            //POP 된 아이템이 send 되기 전에 취소되면서 누락되는 경우를 방지하기 위해
+            //CoroutineScope.isActive 대신 다른 변수를 사용하여 coroutineJob 이 정상적으로 종료되도록 함
+            while (isActiveQueuePopper) {
                 val job = queue.pop()
 
                 if (job == null) {
@@ -95,7 +103,7 @@ class CoroutineWorker(
                     continue
                 }
 
-                distributor.send(job) //TODO: POP 된 아이템이 send 되기 전에 취소됐을 경우
+                distributor.send(job)
             }
         }
     }
