@@ -9,7 +9,7 @@ plugins {
 
 val artifactName = "kotlin-coroutine-worker"
 val artifactGroup = "kr.jadekim"
-val artifactVersion = "0.2.0"
+val artifactVersion = "0.2.3"
 group = artifactGroup
 version = artifactVersion
 

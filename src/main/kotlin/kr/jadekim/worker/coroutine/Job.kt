@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.reflect.KClass
 
-abstract class Job<Data : Any, Result>(val description: JobDescription<Job<Data, *>, Data>) {
+abstract class Job<Data : Any, Result>(val description: JobDescription<Data>) {
 
     abstract suspend fun execute(data: Data): Result
 
@@ -37,7 +37,7 @@ abstract class Job<Data : Any, Result>(val description: JobDescription<Job<Data,
 
 var defaultJobJsonMapper = jacksonObjectMapper()
 
-open class JobDescription<J : Job<Data, *>, Data : Any>(val jobClass: KClass<J>, val dataClass: KClass<Data>) {
+open class JobDescription<Data : Any>(val jobClass: KClass<*>, val dataClass: KClass<Data>) {
 
     open val key: String = jobClass.java.simpleName
 

@@ -50,8 +50,6 @@ class RedisJobQueue(
         var jobData: JobData? = delegator.pop()
 
         while (jobData == null) {
-            jobData = delegator.pop()
-
             if (eventBus == null) {
                 delay(1000)
                 continue
@@ -62,6 +60,8 @@ class RedisJobQueue(
             } catch (e: ClosedReceiveChannelException) {
                 return null
             }
+
+            jobData = delegator.pop()
         }
 
         return jobData

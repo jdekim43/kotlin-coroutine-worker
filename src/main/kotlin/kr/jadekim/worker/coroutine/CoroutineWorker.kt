@@ -57,14 +57,14 @@ class CoroutineWorker(
 
     operator fun plus(job: Job<Any, Any>) = registerJob(job)
 
+    fun <Data : Any> run(jobDescription: JobDescription<Data>, data: Data) = run(jobDescription.key, data)
+
     fun <Data : Any> run(jobKey: String, data: Data): CoroutineJob {
         val job = jobs[jobKey] ?: throw IllegalStateException("Not registered job")
         val jobData = job.toJobData(data)
 
         return launch { queue.push(jobData) }
     }
-
-    operator fun plus(job: Pair<String, Any>) = run(job.first, job.second)
 
     private fun launchProcessor(id: String? = null) {
         processors += launch(CoroutineName("CoroutineWorker-$name-Processor($id)")) {
